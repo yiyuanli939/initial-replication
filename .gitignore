@@ -1,0 +1,71 @@
+# =====================================================================
+# 1. Secrets: never commit
+# =====================================================================
+.env
+.env.*
+!.env.example
+*.pem
+hf_token*
+
+# =====================================================================
+# 2. Python environment: uv rebuilds it any time with `uv sync`
+#    DO commit: pyproject.toml, uv.lock, .python-version
+# =====================================================================
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# =====================================================================
+# 3. Experiment artifacts: big, regenerable, or sensitive
+#    (copy to the Mac with rsync when needed; see docs/workflow.md)
+# =====================================================================
+outputs/
+checkpoints/
+activations/
+
+# Model weights and big arrays, wherever they end up.
+# *.pt is NOT ignored, so a small results/<run>/direction.pt can be committed.
+*.safetensors
+*.bin
+*.gguf
+*.ckpt
+*.pth
+*.onnx
+*.npy
+*.npz
+*.h5
+
+# Model generations may contain harmful text, and this repo is public.
+**/completions*.json
+**/completions*.jsonl
+**/generations*.json
+**/generations*.jsonl
+
+# Downloaded datasets: ignore everything in data/ except its README.
+data/*
+!data/README.md
+
+# Caches and experiment trackers
+.cache/
+hf_cache/
+wandb/
+mlruns/
+lightning_logs/
+
+# =====================================================================
+# 4. OS and editor noise (Mac, Linux, Windows)
+# =====================================================================
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+*~
+.vscode/
+.idea/

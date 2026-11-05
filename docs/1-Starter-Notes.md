@@ -2,9 +2,27 @@
 
 We want to start the whole project from the beginning. The beginning paper that we need to replicate in a small model is [Arditi et al. (2024)](https://arxiv.org/abs/2406.11717). 
 
+The first note I need to review is huggingface's note. 
 
+Let $r \in \mathbb{R}^d$ be the refusal direction and normalize it 
+$$
+\hat{r} = \frac{r}{||r||_2}
+$$
+For any vector $x \in \mathbb{R}^d$, its component along this direction is 
 
-
+$$
+\operatorname{proj}_{\hat r}(x)
+=
+\underbrace{(\hat r^\top x)}_{\text{scalar amount}}
+\underbrace{\hat r}_{\text{direction}}.
+$$
+Removing this component gives 
+$$
+\operatorname{proj}_{\hat r}(x)
+=
+\underbrace{(\hat r^\top x)}_{\text{scalar amount}}
+\underbrace{\hat r}_{\text{direction}}.
+$$
 
 
 

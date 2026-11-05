@@ -1,0 +1,32 @@
+[project]
+name = "abliteration"
+version = "0.1.0"
+authors = [
+    { name = "yiyuanli939", email = "chrisli218085778@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.15.0",
+    "datasets>=4.8.5,<5",
+    "einops>=0.8.2",
+    "jaxtyping>=0.3.11",
+    "matplotlib>=3.11.2",
+    "numpy>=2.4.6",
+    "pandas>=3.1.0",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+    "tiktoken>=0.14.0",
+    "tqdm>=4.70.1",
+    "transformer-lens>=2.15.4,<3",
+    "transformers==4.51.3",
+    "transformers-stream-generator>=0.0.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+]

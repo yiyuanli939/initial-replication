@@ -1,11 +1,11 @@
 """abliterate.py - refusal-direction ablation with plain Transformers + PyTorch hooks.
 
-No TransformerLens needed. Five ideas, five functions:
-  1. format_prompts            chat-template the instructions the way the model sees them
-  2. last_token_residuals      read the residual stream (hidden_states) at the last prompt token
-  3. refusal_directions        difference of means, one candidate per layer
-  4. ablate                    remove r from everything that WRITES to the stream (runtime hooks)
-  5. orthogonalize_checkpoint  bake the same edit into the safetensors files, shard by shard
+Everything here is a move on the residual stream:
+  READ      last_token_residuals      what the stream holds at the last prompt token, every layer
+  CHOOSE    refusal_directions        difference of means -> one candidate direction per layer
+  SUBTRACT  ablate                    no writer may put r into the stream (runtime hooks)
+  ADD       add_at                    push the stream along v at one layer (steering)
+  BAKE      orthogonalize_checkpoint  the SUBTRACT move written into the weights, shard by shard
 
 Everywhere, r may be one direction [d] or a few stacked directions [k, d].
 """
@@ -71,8 +71,8 @@ def orthonormal(r: torch.Tensor) -> torch.Tensor:
 
 def project_out(x: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
     """x - (x . r) r for every orthonormal row r of Q (a single unit vector also works)."""
-    Q = Q.to(x.device, x.dtype).reshape(-1, x.shape[-1])
-    return x - (x @ Q.T) @ Q
+    Q = Q.to(x.device, torch.float32).reshape(-1, x.shape[-1])
+    return x - ((x.float() @ Q.T) @ Q).to(x.dtype)        # project in fp32, keep the stream's dtype
 
 
 # ---------------------------------------------------------------- 4. test it live
@@ -95,6 +95,27 @@ def ablate(model, r: torch.Tensor):
     finally:
         for h in hooks:
             h.remove()
+
+
+def decoder_layers(model):
+    """The text model's list of decoder layers (works inside multimodal wrappers too)."""
+    return next(m for n, m in model.named_modules()
+                if n.endswith("layers") and isinstance(m, torch.nn.ModuleList) and not SKIP_RE.search(n))
+
+
+@contextlib.contextmanager
+def add_at(model, layer: int, v: torch.Tensor):
+    """Inside this block, v is added to the stream at the input of `layer`, at every position."""
+    def pre(mod, args, kwargs):
+        if args:
+            return (args[0] + v.to(args[0].dtype), *args[1:]), kwargs
+        kwargs["hidden_states"] = kwargs["hidden_states"] + v.to(kwargs["hidden_states"].dtype)
+        return args, kwargs
+    h = decoder_layers(model)[layer].register_forward_pre_hook(pre, with_kwargs=True)
+    try:
+        yield
+    finally:
+        h.remove()
 
 
 # ---------------------------------------------------------------- 5. bake it in

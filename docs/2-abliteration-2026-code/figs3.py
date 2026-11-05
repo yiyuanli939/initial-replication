@@ -1,176 +1,164 @@
-"""Figures for the 'dance on the residual stream' framing and the paper comparison."""
+"""Figures for Sections 5-6: the papers (RDO, COSMIC), every method head to head, and the checkpoint audit.
+Reads results/results2.json, results5a.json, results5b.json, results5c.json, results5d.json and audit.json."""
 import json
-from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
-from figs import AXIS, BLUE, GRID, INK, INK2, MUTED, ORANGE, SURF, VIOLET, save
+from figstyle import AQUA, AXIS, BLUE, GRID, INK, INK2, MODEL_COL, MUTED, ORANGE, SURF, VIOLET, W_FULL, bar_gap, save
+from labels import all_methods, family, label
 
-CODEBG = "#f4f3ef"
-
-
-def arrow(ax, p, q, color=INK2, lw=1.6, style="-|>", ls="-", ms=12):
-    ax.add_patch(FancyArrowPatch(p, q, arrowstyle=style, mutation_scale=ms, color=color, lw=lw, linestyle=ls))
-
-
-def lane(ax, x0=1.2, x1=2.0, y0=0.3, y1=4.3):
-    ax.add_patch(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.12",
-                                fc="#eef4fc", ec=BLUE, lw=1.3))
-    arrow(ax, ((x0 + x1) / 2, y0 + 0.1), ((x0 + x1) / 2, y1 - 0.1), color=BLUE, lw=1.0, ms=9)
+R2 = json.load(open("results/results2.json")); R5a = json.load(open("results/results5a.json"))
+R5b = json.load(open("results/results5b.json"))
+FAM_NAME = {"original": "original model", "2024": "2024 recipe", "paper": "2025-2026 papers", "guide": "this guide"}
 
 
-def writer(ax, y, label, x=2.7, w=1.9, ec=AXIS, fc="#ffffff"):
-    ax.add_patch(FancyBboxPatch((x, y - 0.28), w, 0.56, boxstyle="round,pad=0.01,rounding_size=0.06", fc=fc, ec=ec, lw=1.1))
-    ax.text(x + w / 2, y, label, ha="center", va="center", fontsize=7.6)
+def spearman(a, b):
+    """Spearman rank correlation with average ranks for ties (no scipy needed)."""
+    def rank(v):
+        v = np.asarray(v, float); order = v.argsort(); r = np.empty(len(v)); r[order] = np.arange(len(v))
+        for x in np.unique(v):
+            r[v == x] = r[v == x].mean()
+        return r
+    return float(np.corrcoef(rank(a), rank(b))[0, 1])
 
 
-def fig_moves():
-    fig, axs = plt.subplots(1, 3, figsize=(7.4, 3.2))
-    titles = ["READ", "SUBTRACT", "ADD"]
-    codes = ["h = out.hidden_states[l][:, -1]\nscore = h @ r",
-             "with ablate(model, r):\n    model.generate(...)",
-             "with add_at(model, l, a * r):\n    model.generate(...)"]
-    notes = ["look at the stream;\nchange nothing",
-             "every writer drops\nits r component",
-             "push the stream\nalong r at one layer"]
-    for ax, t, c, n in zip(axs, titles, codes, notes):
-        ax.set_xlim(0, 5); ax.set_ylim(-1.5, 5.0); ax.axis("off")
-        lane(ax)
-        ax.text(0.05, 4.75, t, fontsize=11, weight="bold", color=INK)
-        ax.text(0.05, -0.55, c, fontsize=6.7, family="DejaVu Sans Mono", va="top",
-                bbox=dict(boxstyle="round,pad=0.35", fc=CODEBG, ec="none"))
-        ax.text(4.95, 4.75, n, fontsize=7.2, color=INK2, ha="right", va="top")
-    # READ
-    ax = axs[0]
-    writer(ax, 1.4, "layer l"); arrow(ax, (2.7, 1.4), (2.02, 1.4), color=MUTED)
-    ax.add_patch(FancyBboxPatch((2.7, 2.65), 1.9, 0.75, boxstyle="round,pad=0.01,rounding_size=0.06", fc="#ffffff", ec=BLUE, lw=1.1))
-    ax.text(3.65, 3.02, "x · r = 36.7", ha="center", va="center", fontsize=8, color=BLUE, weight="bold")
-    arrow(ax, (2.02, 3.0), (2.68, 3.0), color=BLUE, ls="--")
-    # SUBTRACT
-    ax = axs[1]
-    for y, lab in [(1.0, "o_proj / out_proj"), (2.2, "down_proj"), (3.4, "next writer …")]:
-        writer(ax, y, lab, ec=ORANGE, fc="#fdf0ea")
-        arrow(ax, (2.7, y), (2.02, y), color=ORANGE)
-        ax.text(2.36, y + 0.2, "−r", fontsize=7.5, color=ORANGE, ha="center", weight="bold")
-    # ADD
-    ax = axs[2]
-    writer(ax, 1.4, "layer l − 1"); arrow(ax, (2.7, 1.4), (2.02, 1.4), color=MUTED)
-    writer(ax, 3.3, "layer l"); arrow(ax, (2.02, 3.3), (2.7, 3.3), color=MUTED)
-    arrow(ax, (0.2, 2.45), (1.18, 2.45), color=VIOLET, lw=2.2)
-    ax.text(0.2, 2.62, "+ a·r", fontsize=8.5, color=VIOLET, weight="bold")
-    fig.tight_layout(); save(fig, "moves")
-
-
-def fig_gaps():
-    R = json.load(open("results/results5a.json"))["gaps"]
-    names = ["r11", "r20", "r22", "r23"]
-    states = [("original", "original", INK2), ("single_l23", "remove r23 only (2024 recipe)", MUTED),
-              ("best3", "remove r11, r20, r22 (this guide)", VIOLET)]
-    fig, ax = plt.subplots(figsize=(7.2, 2.6))
-    x = np.arange(len(names)); w = 0.26
-    for i, (k, lab, col) in enumerate(states):
-        vals = [R[k][n][int(n[1:])] for n in names]
-        bars = ax.bar(x + (i - 1) * w, vals, w * 0.92, color=col, label=lab)
-        for xx, v in zip(x + (i - 1) * w, vals):
-            ax.text(xx, max(v, 0) + 1.2, f"{abs(v):.1f}" if abs(v) < 0.05 else f"{v:.1f}", ha="center", fontsize=7)
-    ax.set_xticks(x, [f"along {n}\n(at layer {n[1:]})" for n in names], fontsize=8)
-    ax.set_ylabel("harmful − harmless gap")
-    ax.set_ylim(0, 68); ax.grid(axis="x", visible=False)
-    ax.legend(fontsize=7.6, loc="upper left")
-    fig.tight_layout(); save(fig, "gaps")
-
-
-def fig_pipeline():
-    fig, ax = plt.subplots(figsize=(7.2, 1.55))
-    ax.set_xlim(0, 10); ax.set_ylim(0, 1.6); ax.axis("off")
-    steps = [("READ", "hidden states of\n256 + 256 prompts"), ("CHOOSE", "difference of means;\nscore with a judge"),
-             ("SUBTRACT", "hooks remove r\nfrom every writer"), ("BAKE", "same edit, written\ninto the weights"),
-             ("CHECK", "judge, KL, GSM8K,\nthinking, audit")]
-    w, gap = 1.72, 0.3
-    for i, (t, s) in enumerate(steps):
-        x = 0.05 + i * (w + gap)
-        ec = ORANGE if t in ("SUBTRACT", "BAKE") else BLUE
-        fc = "#fdf0ea" if t in ("SUBTRACT", "BAKE") else "#eef4fc"
-        ax.add_patch(FancyBboxPatch((x, 0.1), w, 1.35, boxstyle="round,pad=0.01,rounding_size=0.08", fc=fc, ec=ec, lw=1.2))
-        ax.text(x + 0.12, 1.15, f"{i + 1}  {t}", fontsize=9.5, weight="bold", va="center")
-        ax.text(x + 0.12, 0.55, s, fontsize=7.4, color=INK2, va="center")
-        if i < 4:
-            arrow(ax, (x + w + 0.02, 0.78), (x + w + gap - 0.02, 0.78))
-    save(fig, "pipeline")
-
-
-def fig_methods():
-    import os
-    R = json.load(open("results/" + os.environ.get("R5C", "results5c.json")))["test"]
-    rows = list(R.items())
-    order = sorted(range(len(rows)), key=lambda i: rows[i][1]["harmful_comply"])
-    rows = [rows[i] for i in order]
-    fig, axs = plt.subplots(1, 3, figsize=(7.4, 3.6), sharey=True, gridspec_kw={"width_ratios": [2.2, 1.4, 1.4]})
-    y = np.arange(len(rows))
-    from labels import label
-    def col(name):
-        if name.startswith("original"): return INK2
-        if "ours" in name: return VIOLET
-        if "2024" in name: return MUTED
-        return BLUE
-    cols = [col(n) for n, _ in rows]
-    for ax, key, title, scale in [(axs[0], "harmful_comply", "complies with harmful (%)", 100),
-                                  (axs[1], "harmless_comply", "answers harmless (%)", 100),
-                                  (axs[2], "kl", "KL on harmless", 1)]:
-        vals = [scale * r[key] for _, r in rows]
-        ax.barh(y, vals, color=cols, height=0.62)
-        for yy, v in zip(y, vals):
-            ax.text(v + (2 if scale == 100 else 0.03), yy, f"{v:.0f}" if scale == 100 else f"{v:.2f}", va="center", fontsize=7)
-        ax.set_title(title, fontsize=8.6, loc="center"); ax.grid(axis="y", visible=False)
-        if scale == 100: ax.set_xlim(0, 118)
-    axs[2].set_xlim(0, max(r["kl"] for _, r in rows) * 1.35)
-    axs[0].set_yticks(y, [label(n) for n, _ in rows], fontsize=7.4)
-    fig.tight_layout(); save(fig, "methods")
-
-
-def fig_cosmic():
-    R = json.load(open("results/results5a.json")); R2 = json.load(open("results/results2.json"))
-    Sc = np.array(R["cosmic"]["Sc_cat"]); KL = np.array(R["cosmic"]["KL"])
-    comp = {s["layer"]: s["comply"] for s in R2["sweep"]}
-    ls = np.arange(1, 32)
-    fig, axs = plt.subplots(1, 2, figsize=(7.2, 2.7))
-    ax = axs[0]
-    ax.plot(ls, Sc[-1, 1:32], color=BLUE, marker="o", ms=3, label="COSMIC S_comply (no text)")
-    ax.axhline(R["cosmic_baseline_cos"]["cat"], color=MUTED, ls="--", lw=1)
-    ax.text(1, R["cosmic_baseline_cos"]["cat"] + 0.01, "no intervention", fontsize=7, color=MUTED)
-    ax2 = axs[1]
-    ax2.scatter(Sc[-1, 1:32], [100 * comp[l] for l in ls], color=BLUE, s=22, edgecolor=SURF, zorder=3)
-    for l in (23, 26):
-        ax2.annotate(f"L{l}", (Sc[-1, l], 100 * comp[l]), xytext=(4, 3), textcoords="offset points", fontsize=7)
-    ax2.annotate("L11, L20, L22", (0.826, 31), xytext=(-62, -2), textcoords="offset points", fontsize=7)
-    ax.set_xlabel("layer of the direction (last token)"); ax.set_ylabel("cos(harmless, harmful + ablation)")
-    ax.set_title("COSMIC's text-free score", fontsize=9)
-    ax2.set_xlabel("COSMIC S_comply"); ax2.set_ylabel("judged compliance (%)")
-    ax2.set_title("…does not predict real compliance", fontsize=9)
-    fig.tight_layout(); save(fig, "cosmic")
-
-
+# ======================================================================== 5.1 RDO
 def fig_rdo():
-    R = json.load(open("results/results5b.json"))
-    h = np.array([x[1:] for x in R["rdo_hist"]])          # loss, abl, add, kl
-    ep = np.array([x[0] for x in R["rdo_hist"]])
-    steps = np.arange(len(h))
-    fig, axs = plt.subplots(1, 2, figsize=(7.2, 2.4))
-    for k, (lab, c) in enumerate([("ablation CE", ORANGE), ("addition CE", BLUE)]):
-        axs[0].plot(steps, h[:, k + 1], color=c, lw=1.2, alpha=0.9, label=lab)
-    axs[0].set_xlabel("step (16 prompts each)"); axs[0].set_ylabel("loss"); axs[0].legend(fontsize=7.5)
-    axs[0].set_title("Training the direction", fontsize=9)
-    axs[1].plot(steps, h[:, 3], color=VIOLET, lw=1.2)
-    axs[1].set_xlabel("step"); axs[1].set_ylabel("retain KL"); axs[1].set_title("…while harmless outputs stay put", fontsize=9)
-    fig.tight_layout(); save(fig, "rdo")
+    h = np.array(R5b["rdo_hist"])                       # columns: epoch, total loss, L_abl, L_add, L_ret
+    ep = h[:, 0].astype(int); n_ep = ep.max() + 1
+    x = np.arange(len(h)) / (len(h) / n_ep)
+    fig, axs = plt.subplots(1, 2, figsize=(W_FULL, 2.5), gridspec_kw={"wspace": 0.3})
+    for col, k, lab in [(ORANGE, 2, r"$\mathcal{L}_{\mathrm{abl}}$: answer harmful prompts with $\hat{\mathbf{r}}$ removed"),
+                        (BLUE, 3, r"$\mathcal{L}_{\mathrm{add}}$: refuse harmless prompts with $\alpha\hat{\mathbf{r}}$ added")]:
+        axs[0].plot(x, h[:, k], color=col, lw=0.6, alpha=0.3)
+        axs[0].plot(np.arange(n_ep) + 0.5, [h[ep == e, k].mean() for e in range(n_ep)], color=col, marker="o", ms=2.8,
+                    label=lab)
+    axs[0].set_ylabel("cross-entropy"); axs[0].set_xlabel("epoch (16 steps of 16 prompts)")
+    axs[0].set_title("Training one direction", fontsize=8.8)
+    axs[0].legend(loc="upper right", fontsize=6.8)
+    axs[1].plot(x, h[:, 4], color=BLUE, lw=0.6, alpha=0.3)
+    axs[1].plot(np.arange(n_ep) + 0.5, [h[ep == e, 4].mean() for e in range(n_ep)], color=BLUE, marker="o", ms=2.8)
+    axs[1].set_ylabel(r"$\mathcal{L}_{\mathrm{ret}} = D_{\mathrm{KL}}$", fontsize=9); axs[1].set_xlabel("epoch")
+    axs[1].set_title(r"…while harmless outputs barely move ($\hat{\mathbf{r}}$ removed)", fontsize=8.8)
+    for ax in axs:
+        ax.set_xlim(0, n_ep)
+    fig.text(0.5, -0.13, "Thin lines: every step. Dots: epoch means.", ha="center", fontsize=7.2, color=INK2)
+    save(fig, "rdo")
+
+
+# ======================================================================== 5.2 COSMIC
+def fig_cosmic():
+    Sc = np.array(R5a["cosmic"]["Sc_cat"]); base = R5a["cosmic_baseline_cos"]["cat"]
+    comp = {s["layer"]: 100 * s["comply"] for s in R2["sweep"]}
+    ls = np.arange(1, 32); sc = Sc[-1, 1:32]
+    rho = spearman(sc, [comp[l] for l in ls])
+    fig, axs = plt.subplots(1, 2, figsize=(W_FULL, 2.6), gridspec_kw={"wspace": 0.3})
+    ax = axs[0]
+    ax.plot(ls, sc, color=INK2, marker="o", ms=2.8)
+    ax.axhline(base, color=INK2, ls="--", lw=0.9)
+    ax.text(31, base - 0.012, "no intervention", fontsize=6.8, color=INK2, ha="right", va="top")
+    ax.set_xlabel(r"layer $\ell$ of the last-token direction $\hat{\mathbf{r}}_\ell$")
+    ax.set_ylabel(r"$S_{\mathrm{comply}}$", fontsize=9)
+    ax.set_title("COSMIC's text-free score", fontsize=8.8)
+    ax = axs[1]
+    ax.scatter(sc, [comp[l] for l in ls], s=22, color=INK2, edgecolor=SURF, lw=0.8, zorder=3)
+    for l in (11, 20, 22):
+        ax.scatter([sc[l - 1]], [comp[l]], s=34, color=VIOLET, edgecolor=SURF, lw=0.8, zorder=4)
+    ax.scatter([sc[22]], [comp[23]], s=34, color=MUTED, edgecolor=INK, lw=0.8, zorder=4)
+    ax.annotate("23: the 2024 pick", (sc[22], comp[23]), xytext=(-8, 10), textcoords="offset points", fontsize=7,
+                ha="right", arrowprops=dict(arrowstyle="-", color=INK2, lw=0.7))
+    ax.annotate("11, 20, 22", (sc[10], comp[11]), xytext=(-8, -2), textcoords="offset points", fontsize=7,
+                ha="right", va="center")
+    ax.text(0.03, 0.95, rf"Spearman $\rho = {rho:.2f}$", transform=ax.transAxes, fontsize=8, va="top")
+    ax.set_xlabel(r"$S_{\mathrm{comply}}$", fontsize=9); ax.set_ylabel("judged compliance (%)")
+    ax.set_title("…only partly predicts real compliance", fontsize=8.8)
+    save(fig, "cosmic")
+    return rho
+
+
+# ======================================================================== 5.6 head to head
+def fig_methods():
+    T = all_methods()
+    rows = sorted(T.items(), key=lambda kv: kv[1]["harmful_comply"])
+    fig, ax = plt.subplots(figsize=(W_FULL, 3.9))
+    y = np.arange(len(rows))
+    ax.barh(y, [100 * v["harmful_comply"] for _, v in rows], color=[MODEL_COL[family(k)] for k, _ in rows], height=0.66)
+    bar_gap(ax)
+    for yy, (k, v) in zip(y, rows):
+        ax.text(100 * v["harmful_comply"] + 1.2, yy, f"{100 * v['harmful_comply']:.0f}%", va="center", fontsize=7.4,
+                color=INK)
+        ax.text(127, yy, f"{100 * v['harmless_comply']:.0f}%", va="center", ha="right", fontsize=7.2, color=INK2)
+        ax.text(141, yy, f"{v['kl']:.2f}", va="center", ha="right", fontsize=7.2, color=INK2)
+    ax.text(127, len(rows) - 0.2, "answers\nharmless", ha="right", va="bottom", fontsize=6.8, color=INK2)
+    ax.text(141, len(rows) - 0.2, r"$D_{\mathrm{KL}}$", ha="right", va="bottom", fontsize=8.4, color=INK2)
+    ax.set_yticks(y, [label(k) for k, _ in rows], fontsize=7.4)
+    ax.set_xlim(0, 142); ax.set_xticks([0, 25, 50, 75, 100]); ax.spines["bottom"].set_bounds(0, 100)
+    ax.set_ylim(-0.6, len(rows) + 0.9); ax.grid(axis="y", visible=False)
+    ax.set_xlabel("complies with harmful requests (% of 104, judged)", loc="left")
+    ax.legend(handles=[Patch(color=MODEL_COL[f], label=FAM_NAME[f]) for f in ["original", "2024", "paper", "guide"]],
+              loc="lower left", bbox_to_anchor=(0.3, 0.02), fontsize=7.2)
+    save(fig, "methods")
+
+
+def fig_tradeoff():
+    T = all_methods()
+    short = {"original": "original", "dim_l23": "2024 recipe", "dim_l22": "best single layer", "cosmic": "COSMIC",
+             "rdo": "RDO", "som sequential": "SOM, sequential", "som span-selected": "SOM, span-chosen",
+             "som span": "SOM, span", "dim stack": "this guide"}
+    off = {"original": (6, 2), "dim_l23": (6, -2), "dim_l22": (6, 0), "cosmic": (6, 0), "rdo": (-6, 4),
+           "som sequential": (6, 0), "som span-selected": (6, 0), "som span": (6, -5), "dim stack": (6, 4)}
+    fig, ax = plt.subplots(figsize=(W_FULL, 2.9))
+    for k, v in T.items():
+        f = family(k)
+        ax.scatter(v["kl"], 100 * v["harmful_comply"], s=40, color=MODEL_COL[f], edgecolor=SURF, lw=1, zorder=3)
+        p = next((p for p in short if k.lower().startswith(p)), None)
+        if p and not k.lower().startswith(("basic", "uniform")):
+            dx, dy = off[p]
+            ax.annotate(short[p], (v["kl"], 100 * v["harmful_comply"]), xytext=(dx, dy), textcoords="offset points",
+                        fontsize=7.2, ha="right" if dx < 0 else "left", va="center", color=INK)
+    w = [v for k, v in T.items() if k.lower().startswith(("basic", "uniform"))]
+    ax.annotate(r"WRDO family, $\alpha$ = 1, 2, 3 (6 runs)", (max(x["kl"] for x in w), 100 * max(x["harmful_comply"] for x in w)),
+                xytext=(-150, 24), textcoords="offset points", fontsize=7.2, color=INK,
+                arrowprops=dict(arrowstyle="-", color=INK2, lw=0.7))
+    ax.set_xlabel(r"$D_{\mathrm{KL}}$ on harmless prompts (lower = closer to the original)", fontsize=8.4)
+    ax.set_ylabel("complies with harmful (%)"); ax.set_xlim(-0.02, 0.45); ax.set_ylim(-5, 100)
+    ax.legend(handles=[Line2D([], [], marker="o", ls="", color=MODEL_COL[f], ms=6, label=FAM_NAME[f])
+                       for f in ["original", "2024", "paper", "guide"]], loc="lower right", fontsize=7.2)
+    save(fig, "tradeoff")
+
+
+# ======================================================================== 6 audit
+def fig_audit():
+    A = json.load(open("results/audit.json")); s = np.array(A["shared_spectrum"])
+    kinds = {}
+    for e in A["changed"]:
+        kinds[e["name"].split(".")[-2]] = kinds.get(e["name"].split(".")[-2], 0) + 1
+    names = ["embed_tokens", "out_proj", "o_proj", "down_proj", "q/k/v_proj", "gate/up_proj", "norms"]
+    vals = [kinds.get(n, 0) for n in names]
+    fig, axs = plt.subplots(1, 2, figsize=(W_FULL, 2.3), gridspec_kw={"width_ratios": [1.15, 1], "wspace": 0.35})
+    ax = axs[0]
+    ax.barh(range(len(names))[::-1], vals, color=[VIOLET if v else GRID for v in vals], height=0.62)
+    for i, v in enumerate(vals):
+        ax.text(v + 0.6, len(names) - 1 - i, str(v), va="center", fontsize=7.4, color=INK)
+    ax.set_yticks(range(len(names))[::-1], names, fontsize=7.6); ax.set_xlim(0, 40)
+    ax.set_title(f"Which tensors changed ({sum(vals)} of them)", fontsize=8.8); ax.grid(axis="y", visible=False)
+    ax.text(39, 1.0, "writers only", fontsize=7.2, color=INK2, ha="right")
+    ax = axs[1]
+    k = A["shared_subspace_dim"]
+    ax.bar(range(1, len(s) + 1), s, color=[VIOLET] * k + [MUTED] * (len(s) - k), width=0.66)
+    bar_gap(ax)
+    ax.set_yscale("log"); ax.set_ylim(1e-3, 3); ax.set_xticks(range(1, len(s) + 1))
+    ax.set_yticks([1e-3, 1e-2, 1e-1, 1], ["0.001", "0.01", "0.1", "1"]); ax.minorticks_off()
+    ax.set_title("Singular values of all changes stacked", fontsize=8.8)
+    ax.set_xlabel("singular value index")
+    ax.text(k + 0.7, 0.3, f"{k} directions, then a\n{s[k - 1] / s[k]:.0f}× drop to noise", fontsize=7.2, color=INK2)
+    save(fig, "audit")
 
 
 if __name__ == "__main__":
-    import sys
-    fig_moves(); fig_gaps(); fig_pipeline(); fig_cosmic(); fig_rdo()
-    if "--methods" in sys.argv:
-        fig_methods()
+    fig_rdo(); rho = fig_cosmic(); fig_methods(); fig_tradeoff(); fig_audit()
+    json.dump({"cosmic_spearman": rho}, open("results/figs3_stats.json", "w"))
+    print(f"COSMIC Spearman rho = {rho:.3f}")
